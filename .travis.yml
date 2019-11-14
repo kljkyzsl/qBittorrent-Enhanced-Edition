@@ -5,17 +5,38 @@ dist: xenial
 addons:
   apt:
     sources:
+    - sourceline: 'ppa:ondrej/nginx'
     - sourceline: 'ppa:mhier/libboost-latest'
-    - sourceline: 'ppa:beineri/opt-qt-5.12.3-xenial'
     packages:
-    - qt512base
-    - qt512svg
-    - qt512tools
+    - libssl-dev
     - libboost1.70-dev
     - libgl1-mesa-dev
+    - libxkbcommon-x11-0
+    - libegl1-mesa
+
+# Force set QT version
+#env:
+#- QT_VERSION=5.13
 
 install:
-- source /opt/qt512/bin/qt512-env.sh
+- cd /tmp
+# E.g QT_VERSION=5.13
+- |
+  [ -z "${QT_VERSION}" ] && \
+      QT_VERSION="$(curl -s --compressed https://download.qt.io/archive/qt/ | grep /icons/folder.gif | head -n1 | sed -r 's@.*<a href="([^/]+)/">.*@\1@')"
+# E.g 5.13.2
+- QT_SUBVERSION="$(curl -s --compressed "https://download.qt.io/archive/qt/${QT_VERSION}/" | grep /icons/folder.gif | head -n1 | sed -r 's@.*<a href="([^/]+)/">.*@\1@')"
+# E.g 5
+- QT_MAJOR="$(echo "${QT_VERSION}" | cut -d. -f1)"
+- QT_EXTRACT_PATH="${HOME}/Qt"
+- curl --compressed -LOC- "https://download.qt.io/archive/qt/${QT_VERSION}/${QT_SUBVERSION}/qt-opensource-linux-x64-${QT_SUBVERSION}.run"
+- |
+  curl --compressed -sLkf https://raw.githubusercontent.com/benlau/qtci/master/bin/extract-qt-installer | \
+      QT_CI_PACKAGES="qt.qt${QT_MAJOR}.$(echo "${QT_SUBVERSION}" | tr -d '.').gcc_64" bash -s "qt-opensource-linux-x64-${QT_SUBVERSION}.run" "${QT_EXTRACT_PATH}"
+- QT_BASE_DIR="${QT_EXTRACT_PATH}/${QT_SUBVERSION}/gcc_64"
+- export PATH="${QT_BASE_DIR}/bin:${PATH}"
+- export LD_LIBRARY_PATH="${QT_BASE_DIR}/lib:${LD_LIBRARY_PATH}"
+- export PKG_CONFIG_PATH="${QT_BASE_DIR}/lib/pkgconfig:${PKG_CONFIG_PATH}"
 
 script:
 - |
@@ -33,9 +54,8 @@ script:
 - CXXFLAGS="-std=c++11" CPPFLAGS="-std=c++11" ./configure --prefix=/tmp/qbee/AppDir/usr --with-boost-libdir="/usr/lib" || (cat config.log && exit 1)
 - make install -j$(nproc)
 - '[ -x "/tmp/linuxdeploy-x86_64.AppImage" ] || curl -LC- -o /tmp/linuxdeploy-x86_64.AppImage "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"'
-- chmod +x '/tmp/linuxdeploy-x86_64.AppImage'
 - '[ -x "/tmp/linuxdeploy-plugin-qt-x86_64.AppImage" ] || curl -LC- -o /tmp/linuxdeploy-plugin-qt-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage'
-- chmod +x '/tmp/linuxdeploy-plugin-qt-x86_64.AppImage'
+- chmod +x '/tmp/linuxdeploy-x86_64.AppImage' '/tmp/linuxdeploy-plugin-qt-x86_64.AppImage'
 - cd "/tmp/qbee"
 - mkdir -p "/tmp/qbee/AppDir/apprun-hooks/"
 - echo 'export XDG_DATA_DIRS="${APPDIR:-"$(dirname "${BASH_SOURCE[0]}")/.."}/usr/share:${XDG_DATA_DIRS}:/usr/share:/usr/local/share"' > "/tmp/qbee/AppDir/apprun-hooks/xdg_data_dirs.sh"
